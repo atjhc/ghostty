@@ -653,7 +653,11 @@ extension Ghostty {
 
         /// Extra input to send as stdin
         var initialInput: String? = nil
-        
+
+        /// Path to a VT scrollback file to replay before PTY starts.
+        /// Used for window state restoration.
+        var initialScrollbackPath: String? = nil
+
         /// Wait after the command
         var waitAfterCommand: Bool = false
 
@@ -728,27 +732,31 @@ extension Ghostty {
                     return try initialInput.withCString { cInput in
                         config.initial_input = cInput
 
-                        // Convert dictionary to arrays for easier processing
-                        let keys = Array(environmentVariables.keys)
-                        let values = Array(environmentVariables.values)
+                        return try initialScrollbackPath.withCString { cScrollbackPath in
+                            config.initial_scrollback_path = cScrollbackPath
 
-                        // Create C strings for all keys and values
-                        return try keys.withCStrings { keyCStrings in
-                            return try values.withCStrings { valueCStrings in
-                                // Create array of ghostty_env_var_s
-                                var envVars = Array<ghostty_env_var_s>()
-                                envVars.reserveCapacity(environmentVariables.count)
-                                for i in 0..<environmentVariables.count {
-                                    envVars.append(ghostty_env_var_s(
-                                        key: keyCStrings[i],
-                                        value: valueCStrings[i]
-                                    ))
-                                }
+                            // Convert dictionary to arrays for easier processing
+                            let keys = Array(environmentVariables.keys)
+                            let values = Array(environmentVariables.values)
 
-                                return try envVars.withUnsafeMutableBufferPointer { buffer in
-                                    config.env_vars = buffer.baseAddress
-                                    config.env_var_count = environmentVariables.count
-                                    return try body(&config)
+                            // Create C strings for all keys and values
+                            return try keys.withCStrings { keyCStrings in
+                                return try values.withCStrings { valueCStrings in
+                                    // Create array of ghostty_env_var_s
+                                    var envVars = Array<ghostty_env_var_s>()
+                                    envVars.reserveCapacity(environmentVariables.count)
+                                    for i in 0..<environmentVariables.count {
+                                        envVars.append(ghostty_env_var_s(
+                                            key: keyCStrings[i],
+                                            value: valueCStrings[i]
+                                        ))
+                                    }
+
+                                    return try envVars.withUnsafeMutableBufferPointer { buffer in
+                                        config.env_vars = buffer.baseAddress
+                                        config.env_var_count = environmentVariables.count
+                                        return try body(&config)
+                                    }
                                 }
                             }
                         }
