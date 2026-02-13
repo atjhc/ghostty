@@ -2214,6 +2214,26 @@ keybind: Keybinds = .{},
 /// This is currently only supported on macOS. This has no effect on Linux.
 @"window-save-state": WindowSaveState = .default,
 
+/// Save and restore scrollback history as part of window state restoration.
+/// Requires `window-save-state` to be active. When enabled, each surface's
+/// scrollback is written to disk during state encoding (on app quit, window
+/// close, or periodic autosave) and replayed on restore, preserving colors
+/// and formatting via VT sequences.
+///
+/// Disabled by default due to disk I/O cost and storage requirements.
+///
+/// This is currently only supported on macOS. This has no effect on Linux.
+@"window-save-state-scrollback": bool = false,
+
+/// When `window-save-state-scrollback` is enabled, also save and restore
+/// the active screen (the visible terminal viewport) in addition to the
+/// scrollback history. When disabled, only off-screen history is saved,
+/// which avoids restoring the "Last login:" line and shell prompt from the
+/// previous session.
+///
+/// This is currently only supported on macOS. This has no effect on Linux.
+@"window-save-state-scrollback-screen": bool = false,
+
 /// Resize the window in discrete increments of the focused surface's cell size.
 /// If this is disabled, surfaces are resized in pixel increments. Currently
 /// only supported on macOS.

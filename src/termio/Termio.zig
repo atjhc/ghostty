@@ -317,6 +317,29 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         .terminal_stream = .initAlloc(alloc, handler),
         .thread_enter_state = thread_enter_state,
     };
+
+    // Replay scrollback history from a previous session before the PTY
+    // starts, so the terminal state is restored identically to how it was
+    // saved. This is safe here because the IO thread hasn't started yet.
+    if (opts.initial_scrollback_path) |path| {
+        const file = std.fs.openFileAbsolute(path, .{}) catch |err| blk: {
+            log.warn("failed to open scrollback file err={}", .{err});
+            break :blk null;
+        };
+        if (file) |f| {
+            defer f.close();
+            var buf: [4096]u8 = undefined;
+            while (true) {
+                const n = f.read(buf[0..]) catch break;
+                if (n == 0) break;
+                self.terminal_stream.nextSlice(buf[0..n]) catch |err|
+                    log.warn("error replaying scrollback err={}", .{err});
+            }
+            // Reset SGR attributes and move to a fresh line so the new PTY
+            // session's output doesn't bleed onto the restored scrollback.
+            self.terminal_stream.nextSlice("\x1b[m\r\n") catch {};
+        }
+    }
 }
 
 pub fn deinit(self: *Termio) void {

@@ -195,6 +195,9 @@ class AppDelegate: NSObject,
         // Store our start time
         applicationLaunchTime = ProcessInfo.processInfo.systemUptime
 
+        // Remove any stale scrollback files left from prior sessions.
+        TerminalWindowRestoration.cleanupStaleScrollbackFiles()
+
         // Check if secure input was enabled when we last quit.
         if UserDefaults.standard.bool(forKey: "SecureInput") != SecureInput.shared.enabled {
             toggleSecureInput(self)
@@ -413,6 +416,14 @@ class AppDelegate: NSObject,
         // so remove them all now. In the future we may want to be
         // more selective and only remove surface-targeted notifications.
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
+
+        // Force all restorable windows to re-encode their state before the
+        // app exits. macOS skips willEncodeRestorableState for windows whose
+        // state hasn't been explicitly invalidated since the last periodic
+        // save, which would leave the scrollback VT file stale.
+        for window in NSApplication.shared.windows {
+            window.invalidateRestorableState()
+        }
     }
 
     /// This is called when the application is already open and someone double-clicks the icon

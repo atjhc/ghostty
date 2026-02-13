@@ -657,6 +657,10 @@ pub fn init(
             .renderer_wakeup = render_thread.wakeup,
             .renderer_mailbox = render_thread.mailbox,
             .surface_mailbox = .{ .surface = self, .app = app_mailbox },
+            .initial_scrollback_path = if (comptime @hasDecl(apprt.runtime.Surface, "initialScrollbackPath"))
+                rt_surface.initialScrollbackPath()
+            else
+                null,
         });
     }
     // Outside the block, IO has now taken ownership of our temporary state
@@ -6085,6 +6089,66 @@ fn writeScreenFile(
             path,
         ), .unlocked),
     }
+}
+
+/// Write the surface's scrollback history to the given path as VT sequences.
+/// Used for window state restoration. The caller must ensure the directory exists.
+/// When `include_screen` is true, the active viewport is included after the
+/// scrollback history; otherwise only off-screen history is written.
+pub fn writeScrollbackFile(self: *Surface, path: []const u8, include_screen: bool) !void {
+    // Check if we have scrollback to save before creating the file.
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        // Skip alternate screen — it has no scrollback.
+        if (self.io.terminal.screens.active_key == .alternate) return error.NoScrollback;
+
+        const pages = &self.io.terminal.screens.active.pages;
+        const bottom = if (include_screen)
+            pages.getBottomRight(.screen)
+        else
+            pages.getBottomRight(.history);
+
+        // No history to save
+        if (bottom == null) return error.NoScrollback;
+    }
+
+    var file = try std.fs.createFileAbsolute(path, .{ .mode = 0o600 });
+    defer file.close();
+
+    var buf: [4096]u8 = undefined;
+    var file_writer = file.writer(&buf);
+    var buf_writer = &file_writer.interface;
+
+    {
+        self.renderer_state.mutex.lock();
+        defer self.renderer_state.mutex.unlock();
+
+        const pages = &self.io.terminal.screens.active.pages;
+        const top = pages.getTopLeft(.history);
+        const bottom = if (include_screen)
+            pages.getBottomRight(.screen) orelse unreachable // Already checked above
+        else
+            pages.getBottomRight(.history) orelse unreachable; // Already checked above
+        const sel = terminal.Selection.init(top, bottom, false);
+
+        const ScreenFormatter = terminal.formatter.ScreenFormatter;
+        var formatter: ScreenFormatter = .init(self.io.terminal.screens.active, .{
+            .emit = .vt,
+            .unwrap = true,
+            .trim = false,
+            .background = self.io.terminal.colors.background.get(),
+            .foreground = self.io.terminal.colors.foreground.get(),
+            .palette = &self.io.terminal.colors.palette.current,
+        });
+        formatter.content = .{ .selection = sel.ordered(
+            self.io.terminal.screens.active,
+            .forward,
+        ) };
+        try formatter.format(buf_writer);
+    }
+    try buf_writer.flush();
 }
 
 /// Call this to complete a clipboard request sent to apprt. This should
