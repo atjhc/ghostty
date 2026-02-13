@@ -76,6 +76,10 @@ enum TerminalRestoreError: Error {
 /// The NSWindowRestoration implementation that is called when a terminal window needs to be restored.
 /// The encoding of a terminal window is handled elsewhere (usually NSWindowDelegate).
 class TerminalWindowRestoration: NSObject, NSWindowRestoration {
+    /// Serializes access to pendingScrollbackPaths to prevent race conditions
+    /// when multiple windows restore simultaneously.
+    private static let restorationLock = NSLock()
+
     static func restoreWindow(
         withIdentifier identifier: NSUserInterfaceItemIdentifier,
         state: NSCoder,
@@ -103,11 +107,30 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             return
         }
 
+        // Lock to prevent concurrent window restorations from interfering
+        // with each other's scrollback paths in the shared static dictionary.
+        restorationLock.lock()
+        defer { restorationLock.unlock() }
+
+        // Decode scrollback paths (encoded as a separate key) and stage them
+        // for SurfaceView.init(from:) to consume before the PTY starts.
+        if let data = state.decodeObject(of: NSData.self, forKey: "scrollbackPaths") as? Data,
+           let paths = try? JSONDecoder().decode([String: String].self, from: data) {
+            Ghostty.SurfaceView.pendingScrollbackPaths = paths
+        }
+
         // Decode the state. If we can't decode the state, then we can't restore.
+        // pendingScrollbackPaths is consumed during this decode when surfaces init.
         guard let state = TerminalRestorableState(coder: state) else {
+            // Clean up scrollback files that won't be used since restoration failed
+            for (_, path) in Ghostty.SurfaceView.pendingScrollbackPaths {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+            Ghostty.SurfaceView.pendingScrollbackPaths = [:]
             completionHandler(nil, TerminalRestoreError.stateDecodeFailed)
             return
         }
+        Ghostty.SurfaceView.pendingScrollbackPaths = [:]
 
         // The window creation has to go through our terminalManager so that it
         // can be found for events from libghostty. This uses the low-level
@@ -150,6 +173,25 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // Give the window to AppKit first, then adjust its frame and style
         // to minimise any visible frame changes.
         c.toggleFullscreen(mode: mode)
+    }
+
+    /// Remove scrollback VT files that are older than 48 hours. Called on app
+    /// startup as a safety net in case cleanup after restoration was skipped.
+    static func cleanupStaleScrollbackFiles() {
+        guard let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return }
+        let dir = support.appendingPathComponent("net.mitchellh.ghostty/scrollback")
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: [.creationDateKey]
+        ) else { return }
+        let cutoff = Date(timeIntervalSinceNow: -48 * 3600)
+        for item in items {
+            if let created = try? item.resourceValues(forKeys: [.creationDateKey]).creationDate,
+               created < cutoff {
+                try? FileManager.default.removeItem(at: item)
+            }
+        }
     }
 
     /// This restores the focus state of the surfaceview within the given window. When restoring,
