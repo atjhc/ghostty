@@ -6043,24 +6043,11 @@ fn writeScreenFile(
             return;
         };
 
-        const ScreenFormatter = terminal.formatter.ScreenFormatter;
-        var formatter: ScreenFormatter = .init(self.io.terminal.screens.active, .{
-            .emit = switch (write_screen.emit) {
-                .plain => .plain,
-                .vt => .vt,
-                .html => .html,
-            },
-            .unwrap = true,
-            .trim = false,
-            .background = self.io.terminal.colors.background.get(),
-            .foreground = self.io.terminal.colors.foreground.get(),
-            .palette = &self.io.terminal.colors.palette.current,
-        });
-        formatter.content = .{ .selection = sel.ordered(
-            self.io.terminal.screens.active,
-            .forward,
-        ) };
-        try formatter.format(buf_writer);
+        try self.formatSelection(sel, switch (write_screen.emit) {
+            .plain => .plain,
+            .vt => .vt,
+            .html => .html,
+        }, buf_writer);
     }
     try buf_writer.flush();
 
@@ -6133,22 +6120,33 @@ pub fn writeScrollbackFile(self: *Surface, path: []const u8, include_screen: boo
             pages.getBottomRight(.history) orelse unreachable; // Already checked above
         const sel = terminal.Selection.init(top, bottom, false);
 
-        const ScreenFormatter = terminal.formatter.ScreenFormatter;
-        var formatter: ScreenFormatter = .init(self.io.terminal.screens.active, .{
-            .emit = .vt,
-            .unwrap = true,
-            .trim = false,
-            .background = self.io.terminal.colors.background.get(),
-            .foreground = self.io.terminal.colors.foreground.get(),
-            .palette = &self.io.terminal.colors.palette.current,
-        });
-        formatter.content = .{ .selection = sel.ordered(
-            self.io.terminal.screens.active,
-            .forward,
-        ) };
-        try formatter.format(buf_writer);
+        try self.formatSelection(sel, .vt, buf_writer);
     }
     try buf_writer.flush();
+}
+
+/// Format a terminal selection to a writer using ScreenFormatter.
+/// Caller must hold renderer_state.mutex.
+fn formatSelection(
+    self: *const Surface,
+    sel: terminal.Selection,
+    emit: terminal.formatter.Format,
+    writer: *std.Io.Writer,
+) !void {
+    const ScreenFormatter = terminal.formatter.ScreenFormatter;
+    var formatter: ScreenFormatter = .init(self.io.terminal.screens.active, .{
+        .emit = emit,
+        .unwrap = true,
+        .trim = false,
+        .background = self.io.terminal.colors.background.get(),
+        .foreground = self.io.terminal.colors.foreground.get(),
+        .palette = &self.io.terminal.colors.palette.current,
+    });
+    formatter.content = .{ .selection = sel.ordered(
+        self.io.terminal.screens.active,
+        .forward,
+    ) };
+    try formatter.format(writer);
 }
 
 /// Call this to complete a clipboard request sent to apprt. This should
