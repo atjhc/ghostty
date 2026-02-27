@@ -184,14 +184,6 @@ extension Ghostty {
             return v
         }
 
-        var windowSaveStateScrollbackScreen: Bool {
-            guard let config = self.config else { return false }
-            var v: Bool = false
-            let key = "window-save-state-scrollback-screen"
-            guard ghostty_config_get(config, &v, key, UInt(key.lengthOfBytes(using: .utf8))) else { return false }
-            return v
-        }
-
         var windowPositionX: Int16? {
             guard let config = self.config else { return nil }
             var v: Int16 = 0

@@ -1182,17 +1182,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
     // window controller.
     func window(_ window: NSWindow, willEncodeRestorableState state: NSCoder) {
         if ghostty.config.windowSaveStateScrollback {
-            // Clear any scrollback files from prior encodes. UUIDs are
-            // ephemeral, so old files would otherwise accumulate until the
-            // 48-hour safety sweep.
-            clearScrollbackDirectory()
-
             var scrollbackPaths: [String: String] = [:]
             for view in surfaceTree {
                 let uuid = view.id.uuidString
                 if let path = scrollbackPathForSurface(uuid: uuid),
                    let surface = view.surface {
-                    if ghostty_surface_write_scrollback(surface, path, ghostty.config.windowSaveStateScrollbackScreen) {
+                    if ghostty_surface_write_scrollback(surface, path) {
                         scrollbackPaths[uuid] = path
                     } else {
                         NSLog("ghostty: failed to write scrollback for surface \(uuid)")
@@ -1216,11 +1211,6 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first else { return nil }
         return support.appendingPathComponent("net.mitchellh.ghostty/scrollback")
-    }
-
-    private func clearScrollbackDirectory() {
-        guard let dir = scrollbackDirectory() else { return }
-        try? FileManager.default.removeItem(at: dir)
     }
 
     private func scrollbackPathForSurface(uuid: String) -> String? {

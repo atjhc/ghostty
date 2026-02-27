@@ -1561,9 +1561,8 @@ pub const CAPI = struct {
     export fn ghostty_surface_write_scrollback(
         surface: *Surface,
         path: [*:0]const u8,
-        include_screen: bool,
     ) bool {
-        surface.core_surface.writeScrollbackFile(std.mem.span(path), include_screen) catch |err| {
+        surface.core_surface.writeScrollbackFile(std.mem.span(path)) catch |err| {
             // NoScrollback is not an error - alternate screen has no scrollback to save
             if (err == error.NoScrollback) return false;
             log.warn("failed to write scrollback file err={}", .{err});

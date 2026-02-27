@@ -386,7 +386,11 @@ extension Ghostty {
             ) { [weak self] event in self?.localEventHandler(event) }
 
             // Setup our surface. This will also initialize all the terminal IO.
-            let surface_cfg = baseConfig ?? SurfaceConfiguration()
+            var surface_cfg = baseConfig ?? SurfaceConfiguration()
+            // Enable per-session shell history via /etc/bashrc_Apple_Terminal.
+            if surface_cfg.environmentVariables["TERM_SESSION_ID"] == nil {
+                surface_cfg.environmentVariables["TERM_SESSION_ID"] = self.id.uuidString
+            }
             let surface = surface_cfg.withCValue(view: self) { surface_cfg_c in
                 ghostty_surface_new(app, &surface_cfg_c)
             }
@@ -1742,6 +1746,7 @@ extension Ghostty {
             config.workingDirectory = try container.decode(String?.self, forKey: .pwd)
             // Inject the scrollback path if one was staged for this UUID.
             config.initialScrollbackPath = SurfaceView.pendingScrollbackPaths[uuidString]
+            config.environmentVariables["GHOSTTY_RESTORED_SESSION"] = "1"
             let savedTitle = try container.decodeIfPresent(String.self, forKey: .title)
             let isUserSetTitle = try container.decodeIfPresent(Bool.self, forKey: .isUserSetTitle) ?? false
 

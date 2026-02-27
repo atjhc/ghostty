@@ -1067,7 +1067,7 @@ ghostty_surface_config_s ghostty_surface_config_new();
 ghostty_surface_t ghostty_surface_new(ghostty_app_t,
                                       const ghostty_surface_config_s*);
 void ghostty_surface_free(ghostty_surface_t);
-bool ghostty_surface_write_scrollback(ghostty_surface_t, const char*, bool);
+bool ghostty_surface_write_scrollback(ghostty_surface_t, const char*);
 void* ghostty_surface_userdata(ghostty_surface_t);
 ghostty_app_t ghostty_surface_app(ghostty_surface_t);
 ghostty_surface_config_s ghostty_surface_inherited_config(ghostty_surface_t, ghostty_surface_context_e);

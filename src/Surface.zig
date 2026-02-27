@@ -6078,26 +6078,31 @@ fn writeScreenFile(
     }
 }
 
-/// Write the surface's scrollback history to the given path as VT sequences.
-/// Used for window state restoration. The caller must ensure the directory exists.
-/// When `include_screen` is true, the active viewport is included after the
-/// scrollback history; otherwise only off-screen history is written.
-pub fn writeScrollbackFile(self: *Surface, path: []const u8, include_screen: bool) !void {
-    // Check if we have scrollback to save before creating the file.
+/// Write the surface's scrollback and screen content to the given path as
+/// VT sequences. Used for window state restoration. The caller must ensure
+/// the directory exists. When the alternate screen is active, the primary
+/// screen's history is saved instead.
+pub fn writeScrollbackFile(self: *Surface, path: []const u8) !void {
+    // When the alternate screen is active (vim, htop, etc.) we save the
+    // primary screen's history — the alternate screen has no scrollback.
+    const on_alt = self.io.terminal.screens.active_key == .alternate;
+    const screen = if (on_alt)
+        self.io.terminal.screens.get(.primary) orelse return error.NoScrollback
+    else
+        self.io.terminal.screens.active;
+
     {
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
-        // Skip alternate screen — it has no scrollback.
-        if (self.io.terminal.screens.active_key == .alternate) return error.NoScrollback;
-
-        const pages = &self.io.terminal.screens.active.pages;
-        const bottom = if (include_screen)
-            pages.getBottomRight(.screen)
+        const pages = &screen.pages;
+        // On alternate screen, only save history (no active screen to save).
+        // Otherwise save everything.
+        const bottom = if (on_alt)
+            pages.getBottomRight(.history)
         else
-            pages.getBottomRight(.history);
+            pages.getBottomRight(.screen);
 
-        // No history to save
         if (bottom == null) return error.NoScrollback;
     }
 
@@ -6112,15 +6117,28 @@ pub fn writeScrollbackFile(self: *Surface, path: []const u8, include_screen: boo
         self.renderer_state.mutex.lock();
         defer self.renderer_state.mutex.unlock();
 
-        const pages = &self.io.terminal.screens.active.pages;
+        const pages = &screen.pages;
         const top = pages.getTopLeft(.history);
-        const bottom = if (include_screen)
-            pages.getBottomRight(.screen) orelse unreachable // Already checked above
+        const bottom = if (on_alt)
+            pages.getBottomRight(.history) orelse unreachable
         else
-            pages.getBottomRight(.history) orelse unreachable; // Already checked above
+            pages.getBottomRight(.screen) orelse unreachable;
         const sel = terminal.Selection.init(top, bottom, false);
 
-        try self.formatSelection(sel, .vt, buf_writer);
+        const ScreenFormatter = terminal.formatter.ScreenFormatter;
+        var formatter: ScreenFormatter = .init(screen, .{
+            .emit = .vt,
+            .unwrap = true,
+            .trim = false,
+            .background = self.io.terminal.colors.background.get(),
+            .foreground = self.io.terminal.colors.foreground.get(),
+            .palette = &self.io.terminal.colors.palette.current,
+        });
+        formatter.content = .{ .selection = sel.ordered(
+            screen,
+            .forward,
+        ) };
+        try formatter.format(buf_writer);
     }
     try buf_writer.flush();
 }

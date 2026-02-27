@@ -321,6 +321,8 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
     // Replay scrollback history from a previous session before the PTY
     // starts, so the terminal state is restored identically to how it was
     // saved. This is safe here because the IO thread hasn't started yet.
+    // We must hold renderer_state.mutex because the stream handler's
+    // surfaceMessageWriter assumes it when the mailbox is full.
     if (opts.initial_scrollback_path) |path| {
         const file = std.fs.openFileAbsolute(path, .{}) catch |err| blk: {
             log.warn("failed to open scrollback file err={}", .{err});
@@ -328,6 +330,8 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
         };
         if (file) |f| {
             defer f.close();
+            self.renderer_state.mutex.lock();
+            defer self.renderer_state.mutex.unlock();
             var buf: [4096]u8 = undefined;
             while (true) {
                 const n = f.read(buf[0..]) catch break;
@@ -335,9 +339,22 @@ pub fn init(self: *Termio, alloc: Allocator, opts: termio.Options) !void {
                 self.terminal_stream.nextSlice(buf[0..n]) catch |err|
                     log.warn("error replaying scrollback err={}", .{err});
             }
-            // Reset SGR attributes and move to a fresh line so the new PTY
-            // session's output doesn't bleed onto the restored scrollback.
-            self.terminal_stream.nextSlice("\x1b[m\r\n") catch {};
+            // Reset modes that may have been left enabled by the saved VT
+            // content so the new shell session starts clean.
+            self.terminal_stream.nextSlice(
+                "\x1b[m" ++ // SGR reset
+                "\x1b[?9l" ++ // mouse x10 off
+                "\x1b[?1000l" ++ // mouse normal off
+                "\x1b[?1002l" ++ // mouse button off
+                "\x1b[?1003l" ++ // mouse any off
+                "\x1b[?1005l" ++ // mouse format utf8 off
+                "\x1b[?1006l" ++ // mouse format sgr off
+                "\x1b[?1015l" ++ // mouse format urxvt off
+                "\x1b[?1016l" ++ // mouse format sgr_pixels off
+                "\x1b[?2004l" ++ // bracketed paste off
+                "\x1b[?25h" ++ // cursor visible
+                "\r\n",
+            ) catch {};
         }
     }
 }
