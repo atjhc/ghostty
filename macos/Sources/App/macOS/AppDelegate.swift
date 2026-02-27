@@ -195,8 +195,9 @@ class AppDelegate: NSObject,
         // Store our start time
         applicationLaunchTime = ProcessInfo.processInfo.systemUptime
 
-        // Remove any stale scrollback files left from prior sessions.
-        TerminalWindowRestoration.cleanupStaleScrollbackFiles()
+        // All windows have been restored by now, so scrollback files have
+        // been consumed. Remove them all.
+        TerminalWindowRestoration.clearScrollbackFiles()
 
         // Check if secure input was enabled when we last quit.
         if UserDefaults.standard.bool(forKey: "SecureInput") != SecureInput.shared.enabled {

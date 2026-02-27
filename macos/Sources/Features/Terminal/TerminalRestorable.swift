@@ -122,10 +122,6 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // Decode the state. If we can't decode the state, then we can't restore.
         // pendingScrollbackPaths is consumed during this decode when surfaces init.
         guard let state = TerminalRestorableState(coder: state) else {
-            // Clean up scrollback files that won't be used since restoration failed
-            for (_, path) in Ghostty.SurfaceView.pendingScrollbackPaths {
-                try? FileManager.default.removeItem(atPath: path)
-            }
             Ghostty.SurfaceView.pendingScrollbackPaths = [:]
             completionHandler(nil, TerminalRestoreError.stateDecodeFailed)
             return
@@ -175,22 +171,18 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         c.toggleFullscreen(mode: mode)
     }
 
-    /// Remove scrollback VT files that are older than 48 hours. Called on app
-    /// startup as a safety net in case cleanup after restoration was skipped.
-    static func cleanupStaleScrollbackFiles() {
+    /// Remove all scrollback VT files. Called after restoration completes
+    /// since the files have already been consumed by Termio.init.
+    static func clearScrollbackFiles() {
         guard let support = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first else { return }
         let dir = support.appendingPathComponent("net.mitchellh.ghostty/scrollback")
         guard let items = try? FileManager.default.contentsOfDirectory(
-            at: dir, includingPropertiesForKeys: [.creationDateKey]
+            at: dir, includingPropertiesForKeys: nil
         ) else { return }
-        let cutoff = Date(timeIntervalSinceNow: -48 * 3600)
         for item in items {
-            if let created = try? item.resourceValues(forKeys: [.creationDateKey]).creationDate,
-               created < cutoff {
-                try? FileManager.default.removeItem(at: item)
-            }
+            try? FileManager.default.removeItem(at: item)
         }
     }
 
