@@ -21,9 +21,11 @@
 00-kat
 aalhendi
 abudvytis
+adrum
 aindriu80
 alanmoyano
 alexfeijoo44
+amadeus
 andrejdaskalov
 atomk
 balazs-szucs
@@ -60,6 +62,7 @@ guilhermetk
 hakonhagland
 halosatrio
 hqnna
+icodesign
 jacobsandlund
 jake-stewart
 jcollie
@@ -78,12 +81,15 @@ kristina8888
 kristofersoler
 laxystem
 liby
+linustalacko
 lonsagisawa
 mahnokropotkinvich
 marijagjorgjieva
+markhuot
 marrocco-simone
 matkotiric
 miguelelgallo
+mihi314
 mikailmm
 misairuzame
 mitchellh
@@ -104,6 +110,7 @@ phush0
 piedrahitac
 pluiedev
 pouwerkerk
+prakhar54-byte
 priyans-hu
 qwerasd205
 reo101

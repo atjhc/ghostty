@@ -96,10 +96,9 @@ pub const compatibility = std.StaticStringMap(
 });
 
 /// Set Ghostty's graphical user interface language to a language other than the
-/// system default language. The language must be fully specified, including the
-/// encoding. For example:
+/// system default language. For example:
 ///
-///     language = de_DE.UTF-8
+///     language = de
 ///
 /// will force the strings in Ghostty's graphical user interface to be in German
 /// rather than the system default.
@@ -803,11 +802,17 @@ palette: Palette = .{},
 /// look. Colors that have been explicitly set via `palette` are never
 /// overwritten.
 ///
+/// The default value is false (disabled), because many legacy programs
+/// using the 256-color palette hardcode assumptions about what these
+/// colors are (mostly assuming the xterm 256 color palette). However, this
+/// is still a very useful tool for theme authors and users who want
+/// to customize their palette without having to specify all 256 colors.
+///
 /// For more information on how the generation works, see here:
 /// https://gist.github.com/jake-stewart/0a8ea46159a7da2c808e5be2177e1783
 ///
 /// Available since: 1.3.0
-@"palette-generate": bool = true,
+@"palette-generate": bool = false,
 
 /// Invert the palette colors generated when `palette-generate` is enabled,
 /// so that the colors go in reverse order. This allows palette-based
@@ -1207,8 +1212,6 @@ command: ?Command = null,
 /// notifications for a single command, overriding the `never` and `unfocused`
 /// options.
 ///
-/// GTK only.
-///
 /// Available since 1.3.0.
 @"notify-on-command-finish": NotifyOnCommandFinish = .never,
 
@@ -1222,8 +1225,6 @@ command: ?Command = null,
 ///
 /// Options can be combined by listing them as a comma separated list. Options
 /// can be negated by prefixing them with `no-`. For example `no-bell,notify`.
-///
-/// GTK only.
 ///
 /// Available since 1.3.0.
 @"notify-on-command-finish-action": NotifyOnCommandFinishAction = .{
@@ -1261,8 +1262,6 @@ command: ?Command = null,
 ///
 /// The maximum value is `584y 49w 23h 34m 33s 709ms 551µs 615ns`. Any
 /// value larger than this will be clamped to the maximum value.
-///
-/// GTK only.
 ///
 /// Available since 1.3.0
 @"notify-on-command-finish-after": Duration = .{ .duration = 5 * std.time.ns_per_s },
@@ -5656,7 +5655,7 @@ pub const Palette = struct {
 
     /// ghostty_config_palette_s
     pub const C = extern struct {
-        colors: [265]Color.C,
+        colors: [256]Color.C,
     };
 
     pub fn cval(self: Self) Palette.C {

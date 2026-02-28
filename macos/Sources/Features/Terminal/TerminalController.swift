@@ -411,14 +411,14 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 // If we already have a tab group and we want the new tab to open at the end,
                 // then we use the last window in the tab group as the parent.
                 if let last = parent.tabGroup?.windows.last {
-                    last.addTabbedWindow(window, ordered: .above)
+                    last.addTabbedWindowSafely(window, ordered: .above)
                 } else {
                     fallthrough
                 }
 
             case "current": fallthrough
             default:
-                parent.addTabbedWindow(window, ordered: .above)
+                parent.addTabbedWindowSafely(window, ordered: .above)
             }
         }
 
@@ -585,6 +585,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         // Call this last in case it uses any of the properties above.
         window.syncAppearance(surfaceConfig)
+        terminalViewContainer?.ghosttyConfigDidChange(ghostty.config, preferredBackgroundColor: window.preferredBackgroundColor)
     }
 
     /// Adjusts the given frame for the configured window position.
@@ -863,7 +864,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 controller.showWindow(nil)
                 if let firstWindow = firstController.window,
                    let newWindow = controller.window {
-                    firstWindow.addTabbedWindow(newWindow, ordered: .above)
+                    firstWindow.addTabbedWindowSafely(newWindow, ordered: .above)
                 }
             }
 
@@ -952,9 +953,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
                 if tabIndex < tabGroup.windows.count {
                     // Find the window that is currently at that index
                     let currentWindow = tabGroup.windows[tabIndex]
-                    currentWindow.addTabbedWindow(window, ordered: .below)
+                    currentWindow.addTabbedWindowSafely(window, ordered: .below)
                 } else {
-                    tabGroup.windows.last?.addTabbedWindow(window, ordered: .above)
+                    tabGroup.windows.last?.addTabbedWindowSafely(window, ordered: .above)
                 }
 
                 // Make it the key window
@@ -1024,11 +1025,9 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         }
 
         // Initialize our content view to the SwiftUI root
-        window.contentView = TerminalViewContainer(
-            ghostty: self.ghostty,
-            viewModel: self,
-            delegate: self,
-        )
+        window.contentView = TerminalViewContainer {
+            TerminalView(ghostty: ghostty, viewModel: self, delegate: self)
+        }
 
         // If we have a default size, we want to apply it.
         if let defaultSize {
@@ -1154,6 +1153,12 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         super.windowDidBecomeKey(notification)
         self.relabelTabs()
         self.fixTabBar()
+        terminalViewContainer?.updateGlassTintOverlay(isKeyWindow: true)
+    }
+
+    override func windowDidResignKey(_ notification: Notification) {
+        super.windowDidResignKey(notification)
+        terminalViewContainer?.updateGlassTintOverlay(isKeyWindow: false)
     }
 
     override func windowDidMove(_ notification: Notification) {
@@ -1426,7 +1431,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
         if #available(macOS 26, *) {
             if window is TitlebarTabsTahoeTerminalWindow {
                 tabGroup.removeWindow(selectedWindow)
-                targetWindow.addTabbedWindow(selectedWindow, ordered: action.amount < 0 ? .below : .above)
+                targetWindow.addTabbedWindowSafely(selectedWindow, ordered: action.amount < 0 ? .below : .above)
                 DispatchQueue.main.async {
                     selectedWindow.makeKey()
                 }
@@ -1441,7 +1446,7 @@ class TerminalController: BaseTerminalController, TabGroupCloseCoordinator.Contr
 
         // Remove and re-add the window in the correct position
         tabGroup.removeWindow(selectedWindow)
-        targetWindow.addTabbedWindow(selectedWindow, ordered: action.amount < 0 ? .below : .above)
+        targetWindow.addTabbedWindowSafely(selectedWindow, ordered: action.amount < 0 ? .below : .above)
 
         // Ensure our window remains selected
         selectedWindow.makeKey()
