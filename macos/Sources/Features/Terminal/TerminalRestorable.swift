@@ -114,9 +114,13 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
 
         // Decode scrollback paths (encoded as a separate key) and stage them
         // for SurfaceView.init(from:) to consume before the PTY starts.
+        // Filter out paths that aren't locally available to avoid blocking
+        // on iCloud downloads or hanging on evicted files.
         if let data = state.decodeObject(of: NSData.self, forKey: "scrollbackPaths") as? Data,
            let paths = try? JSONDecoder().decode([String: String].self, from: data) {
-            Ghostty.SurfaceView.pendingScrollbackPaths = paths
+            Ghostty.SurfaceView.pendingScrollbackPaths = paths.filter { _, path in
+                FileManager.default.isReadableFile(atPath: path)
+            }
         }
 
         // Decode the state. If we can't decode the state, then we can't restore.
