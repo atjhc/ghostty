@@ -253,6 +253,11 @@ extension Ghostty {
         // We need to support being a first responder so that we can get input events
         override var acceptsFirstResponder: Bool { return true }
 
+        /// Pending scrollback paths keyed by UUID string, set before restoration
+        /// decoding so init(from:) can inject them before the PTY starts.
+        static var pendingScrollbackPaths: [String: String] = [:]
+
+
         init(_ app: ghostty_app_t, baseConfig: SurfaceConfiguration? = nil, uuid: UUID? = nil) {
             self.markedText = NSMutableAttributedString()
             self.id = uuid ?? .init()
@@ -390,7 +395,11 @@ extension Ghostty {
             ) { [weak self] event in self?.localEventHandler(event) }
 
             // Setup our surface. This will also initialize all the terminal IO.
-            let surface_cfg = baseConfig ?? SurfaceConfiguration()
+            var surface_cfg = baseConfig ?? SurfaceConfiguration()
+            // Enable per-session shell history via /etc/bashrc_Apple_Terminal.
+            if surface_cfg.environmentVariables["TERM_SESSION_ID"] == nil {
+                surface_cfg.environmentVariables["TERM_SESSION_ID"] = self.id.uuidString
+            }
             let surface = surface_cfg.withCValue(view: self) { surface_cfg_c in
                 ghostty_surface_new(app, &surface_cfg_c)
             }
@@ -1777,9 +1786,13 @@ extension Ghostty {
             }
 
             let container = try decoder.container(keyedBy: CodingKeys.self)
-            let uuid = UUID(uuidString: try container.decode(String.self, forKey: .uuid))
+            let uuidString = try container.decode(String.self, forKey: .uuid)
+            let uuid = UUID(uuidString: uuidString)
             var config = Ghostty.SurfaceConfiguration()
             config.workingDirectory = try container.decode(String?.self, forKey: .pwd)
+            // Inject the scrollback path if one was staged for this UUID.
+            config.initialScrollbackPath = SurfaceView.pendingScrollbackPaths[uuidString]
+            config.environmentVariables["GHOSTTY_RESTORED_SESSION"] = "1"
             let savedTitle = try container.decodeIfPresent(String.self, forKey: .title)
             let isUserSetTitle = try container.decodeIfPresent(Bool.self, forKey: .isUserSetTitle) ?? false
 

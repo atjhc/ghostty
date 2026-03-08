@@ -1,4 +1,8 @@
 import Cocoa
+import os.log
+
+private let logger = Logger(subsystem: "net.mitchellh.ghostty", category: "restoration")
+
 
 protocol TerminalRestorable: Codable {
     static var selfKey: String { get }
@@ -76,6 +80,10 @@ enum TerminalRestoreError: Error {
 /// The NSWindowRestoration implementation that is called when a terminal window needs to be restored.
 /// The encoding of a terminal window is handled elsewhere (usually NSWindowDelegate).
 class TerminalWindowRestoration: NSObject, NSWindowRestoration {
+    /// Serializes access to pendingScrollbackPaths to prevent race conditions
+    /// when multiple windows restore simultaneously.
+    private static let restorationLock = NSLock()
+
     static func restoreWindow(
         withIdentifier identifier: NSUserInterfaceItemIdentifier,
         state: NSCoder,
@@ -103,11 +111,44 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
             return
         }
 
+        // Lock to prevent concurrent window restorations from interfering
+        // with each other's scrollback paths in the shared static dictionary.
+        logger.warning("restoreWindow: acquiring lock")
+        restorationLock.lock()
+        defer { restorationLock.unlock() }
+
+        // Decode scrollback paths (encoded as a separate key) and stage them
+        // for SurfaceView.init(from:) to consume before the PTY starts.
+        // Filter out paths that aren't locally available to avoid blocking
+        // on iCloud downloads or hanging on evicted files.
+        if let data = state.decodeObject(of: NSData.self, forKey: "scrollbackPaths") as? Data,
+           let paths = try? JSONDecoder().decode([String: String].self, from: data) {
+            let filtered = paths.filter { _, path in
+                FileManager.default.isReadableFile(atPath: path)
+            }
+            logger.warning("restoreWindow: scrollback paths total=\(paths.count) readable=\(filtered.count)")
+            for (uuid, path) in filtered {
+                let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int) ?? -1
+                logger.warning("restoreWindow: scrollback uuid=\(uuid) path=\(path) size=\(size)")
+            }
+            Ghostty.SurfaceView.pendingScrollbackPaths = filtered
+        } else {
+            logger.warning("restoreWindow: no scrollback paths found")
+        }
+
         // Decode the state. If we can't decode the state, then we can't restore.
+        // pendingScrollbackPaths is consumed during this decode when surfaces init.
+        logger.warning("restoreWindow: decoding state (this creates surfaces)")
+        let decodeStart = CFAbsoluteTimeGetCurrent()
         guard let state = TerminalRestorableState(coder: state) else {
+            Ghostty.SurfaceView.pendingScrollbackPaths = [:]
+            logger.warning("restoreWindow: state decode FAILED")
             completionHandler(nil, TerminalRestoreError.stateDecodeFailed)
             return
         }
+        let decodeElapsed = CFAbsoluteTimeGetCurrent() - decodeStart
+        logger.warning("restoreWindow: state decoded in \(String(format: "%.3f", decodeElapsed))s")
+        Ghostty.SurfaceView.pendingScrollbackPaths = [:]
 
         // The window creation has to go through our terminalManager so that it
         // can be found for events from libghostty. This uses the low-level
@@ -150,6 +191,21 @@ class TerminalWindowRestoration: NSObject, NSWindowRestoration {
         // Give the window to AppKit first, then adjust its frame and style
         // to minimise any visible frame changes.
         c.toggleFullscreen(mode: mode)
+    }
+
+    /// Remove all scrollback VT files. Called after restoration completes
+    /// since the files have already been consumed by Termio.init.
+    static func clearScrollbackFiles() {
+        guard let support = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first else { return }
+        let dir = support.appendingPathComponent("net.mitchellh.ghostty/scrollback")
+        guard let items = try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil
+        ) else { return }
+        for item in items {
+            try? FileManager.default.removeItem(at: item)
+        }
     }
 
     /// This restores the focus state of the surfaceview within the given window. When restoring,
