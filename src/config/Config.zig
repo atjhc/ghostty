@@ -3081,6 +3081,13 @@ keybind: Keybinds = .{},
 ///    Prepend a bell emoji (🔔) to the title of the alerted surface until the
 ///    terminal is re-focused or interacted with (such as on keyboard input).
 ///
+///  * `title-aggregate`
+///
+///    When `title` is also enabled, prepend the bell emoji to the window/tab
+///    title when any surface within the window has an active bell, not just
+///    the focused surface. This is useful when using split panes so that the
+///    tab title reflects bells from all splits.
+///
 ///  * `border`
 ///
 ///    Display a border around the alerted surface until the terminal is
@@ -9033,6 +9040,7 @@ pub const BellFeatures = packed struct {
     attention: bool = true,
     title: bool = true,
     border: bool = false,
+    @"title-aggregate": bool = false,
 };
 
 /// See mouse-shift-capture

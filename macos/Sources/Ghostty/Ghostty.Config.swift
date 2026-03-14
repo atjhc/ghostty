@@ -823,6 +823,7 @@ extension Ghostty.Config {
         static let attention = BellFeatures(rawValue: 1 << 2)
         static let title = BellFeatures(rawValue: 1 << 3)
         static let border = BellFeatures(rawValue: 1 << 4)
+        static let titleAggregate = BellFeatures(rawValue: 1 << 5)
     }
 
     struct SplitPreserveZoom: OptionSet {

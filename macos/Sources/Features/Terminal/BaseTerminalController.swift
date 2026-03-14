@@ -52,7 +52,12 @@ class BaseTerminalController: NSWindowController,
     @Published var updateOverlayIsVisible: Bool = false
 
     /// True when any surface in this controller currently has an active bell.
-    @Published private(set) var bell: Bool = false
+    @Published private(set) var bell: Bool = false {
+        didSet {
+            guard oldValue != bell else { return }
+            applyTitleToWindow()
+        }
+    }
 
     /// Whether the terminal surface should focus when the mouse is over it.
     var focusFollowsMouse: Bool {
@@ -814,12 +819,21 @@ class BaseTerminalController: NSWindowController,
         // closed surfaces.
         if let titleSurface = focusedSurface ?? lastFocusedSurface,
            surfaceTree.contains(titleSurface) {
-            // If we have a surface, we want to listen for title changes.
+            // Listen to title changes from the focused surface.
             titleSurface.$title
-                .combineLatest(titleSurface.$bell)
-                .map { [weak self] in self?.computeTitle(title: $0, bell: $1) ?? "" }
                 .sink { [weak self] in self?.titleDidChange(to: $0) }
                 .store(in: &focusedSurfaceCancellables)
+
+            // When title-aggregate is not enabled, observe the focused
+            // surface's bell state to update the title bell indicator.
+            // When title-aggregate IS enabled, the controller's aggregate
+            // bell didSet handles this instead.
+            if !ghostty.config.bellFeatures.contains(.titleAggregate) {
+                titleSurface.$bell
+                    .removeDuplicates()
+                    .sink { [weak self] _ in self?.applyTitleToWindow() }
+                    .store(in: &focusedSurfaceCancellables)
+            }
         } else {
             // There is no surface to listen to titles for.
             titleDidChange(to: "👻")
@@ -843,14 +857,16 @@ class BaseTerminalController: NSWindowController,
     private func applyTitleToWindow() {
         guard let window else { return }
 
-        if let titleOverride {
-            window.title = computeTitle(
-                title: titleOverride,
-                bell: focusedSurface?.bell ?? false)
-            return
+        let baseTitle = titleOverride ?? lastComputedTitle
+
+        let bellState: Bool
+        if ghostty.config.bellFeatures.contains(.titleAggregate) {
+            bellState = bell
+        } else {
+            bellState = focusedSurface?.bell ?? false
         }
 
-        window.title = lastComputedTitle
+        window.title = computeTitle(title: baseTitle, bell: bellState)
     }
 
     func pwdDidChange(to: URL?) {
